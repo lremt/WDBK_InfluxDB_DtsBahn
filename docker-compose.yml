@@ -8,8 +8,6 @@ services:
       - "8086:8086"
     volumes:
       - /mnt/influx_data:/var/lib/influxdb2
-    env_file:
-      - ./.env
     environment:
       # InfluxDB-Initialisierung
       - DOCKER_INFLUXDB_INIT_MODE=setup

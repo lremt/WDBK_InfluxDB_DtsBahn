@@ -85,6 +85,10 @@ def collect_data():
     
     # Jetzt in UTC
     now_utc = datetime.utcnow().replace(tzinfo=tz.UTC)
+    # Umrechnung auf Europe/Berlin
+    now_local_berlin = now_utc.astimezone(berlin_tz)
+    # Für späteres Feld weekday_num:
+    weekday_num = now_local_berlin.weekday()
 
     # Löschen aller Punkte, die NICHT im gewünschten Wochen-Zeitraum liegen (Vor START_UTC oder nach END_UTC)
     def _delete_out_of_range(measurement: str):

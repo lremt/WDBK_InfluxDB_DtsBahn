@@ -37,9 +37,9 @@ STADTNAME_MAPPING = {                # für Wetter-API
 }
 
 
-# Zeitraum für die Daten (lokal in Europe/Berlin, ~1 Woche 02.-10.06.2025)
-WEEK_START_LOCAL = "2025-06-02T18:00:00+02:00" # ISO-Strings
-WEEK_END_LOCAL   = "2025-06-10T18:00:00+02:00"
+# Zeitraum für die Daten (lokal in Europe/Berlin, ~1 Woche 08.-15.06.2025)
+WEEK_START_LOCAL = "2025-06-08T18:00:00+02:00" # ISO-Strings
+WEEK_END_LOCAL   = "2025-06-15T18:00:00+02:00"
 
 # Strings zu UTC-Objekte
 berlin_tz = tz.gettz("Europe/Berlin")
@@ -118,49 +118,56 @@ def collect_data():
         return
     
 
-    # Für jeden Bahnhof alle Abfahrten (Timetables & RIS) holen
+        # Für jeden Bahnhof alle Abfahrten (Timetables & RIS) holen
     for station_name, eva_id in BAHNHOEFE.items():
+        # Zeitformat für Timetables API: yymmdd und Stunde HH
+        date_str = now_utc.strftime("%y%m%d")
+        hour_str = now_utc.strftime("%H")
 
-        # Geplante Abfahrten (Timetables API)
-        tt_url = (
-            f"https://api.deutschebahn.com/timetables/v1/arrivalBoard/"
-            f"{eva_id}?direction=&date={now_utc.isoformat()}"
+        # Geplanter Fahrplan (Timetables plan Endpoint)
+        tt_plan_url = (
+            f"https://apis.deutschebahn.com/db-api-marketplace/apis/timetables/v1/plan/"
+            f"{eva_id}/{date_str}/{hour_str}"
+        )
+        # Echtzeit-Änderungen (Timetables changes Endpoint)
+        tt_changes_url = (
+            f"https://apis.deutschebahn.com/db-api-marketplace/apis/timetables/v1/changes/"
+            f"{eva_id}/{date_str}/{hour_str}"
         )
         headers_db = {
             "DB-Client-Id": client_id,
-            "DB-Api-Key": api_key,
+            "DB-Api-Key":   api_key,
+            "Accept":       "application/json"
         }
+
+        # Hole geplante Abfahrten
         try:
-            r_tt = requests.get(tt_url, headers=headers_db, timeout=15)
-            r_tt.raise_for_status()     # .json zu Python parsen -> departures_tt wie eine Liste/Dict
-            departures_tt = r_tt.json()
+            r_tt = requests.get(tt_plan_url, headers=headers_db, timeout=15)
+            r_tt.raise_for_status()
+            departures_tt = r_tt.json().get("plannedDepartures", [])  # Array aus 'plannedDepartures'
         except Exception as e:
-            print(f"[Error] Timetables für {station_name}: {e}")
+            print(f"[Error] Timetables (plan) für {station_name}: {e}")
             departures_tt = []
 
-        # Reale Abfahrten (RIS::Stations API)
-        ris_url = (
-            f"https://api.deutschebahn.com/ris/v1/arrivalBoard/"
-            f"{eva_id}?date={now_utc.isoformat()}"
-        )
+        # Hole Echtzeit-Änderungen
         try:
-            r_ris = requests.get(ris_url, headers=headers_db, timeout=15)
-            r_ris.raise_for_status()
-            departures_ris = r_ris.json()
+            r_changes = requests.get(tt_changes_url, headers=headers_db, timeout=15)
+            r_changes.raise_for_status()
+            departures_ris = r_changes.json().get("changedDepartures", [])  # Array aus 'changedDepartures'
         except Exception as e:
-            print(f"[Error] RIS für {station_name}: {e}")
+            print(f"[Error] Timetables (changes) für {station_name}: {e}")
             departures_ris = []
 
         # Alle Züge verarbeiten (ohne Begrenzung)
         # Nur nach Index, weil sowohl Timetables als auch RIS in Listen nach Abfahrtszeit sortiert zurückkommen
         # Wenn RIS-Länge < TT-Länge, bleiben "real" und "cancelled" leer/default
         for i, dep_tt in enumerate(departures_tt):
-            scheduled_time = dep_tt.get("scheduledDateTime") or ""
-            train_name     = dep_tt.get("name") or dep_tt.get("train") or ""
-            train_type     = dep_tt.get("type") or ""       # z.B. "ICE", "RE", "RB"
-            operator       = dep_tt.get("operator") or ""   # z.B. "DB"
-            direction      = dep_tt.get("direction") or ""
-            platform       = dep_tt.get("platform") or ""
+            scheduled_time = dep_tt.get("scheduledDepartureTimestamp") or ""
+            train_name     = dep_tt.get("trainName", "")
+            train_type     = dep_tt.get("trainType", "")
+            operator       = dep_tt.get("operator", "")
+            direction      = dep_tt.get("direction", "")
+            platform       = dep_tt.get("plannedPlatform", "")
 
             # Standard-Fallbacks für RIS: Default-Werte, falls keine RIS-Daten
             actual_time = ""
@@ -169,17 +176,17 @@ def collect_data():
 
             if i < len(departures_ris):
                 ris_e = departures_ris[i]
-                actual_time = ris_e.get("realDateTime") or ""
+                actual_time = ris_e.get("actualDepartureTimestamp") or ""
                 cancelled   = bool(ris_e.get("cancelled", False))
-                # Wenn wir eine realDateTime haben, berechnen wir die Verspätung:
+                # Wenn wir eine actualDepartureTimestamp haben, berechnen wir die Verspätung:
                 if scheduled_time and actual_time:
                     delay_min = parse_delay(scheduled_time, actual_time)
 
             # Falls direkt ein "delay"-Feld da ist (Timetables liefert es manchmal): override, falls parse_delay nichts ergibt
-            if delay_min is None and dep_tt.get("delay") is not None:
+            if delay_min is None and dep_tt.get("delayMinutes") is not None:
                 # z.B. dep_tt["delay"] liefert int Minuten
                 try:
-                    delay_min = float(dep_tt.get("delay"))
+                    delay_min = float(dep_tt.get("delayMinutes"))
                 except Exception:
                     pass
 
@@ -212,35 +219,35 @@ def collect_data():
             except Exception as e:
                 print(f"[Error] InfluxDB (departure) für {station_name}: {e}")
 
-        # Wetterdaten pro Station
-        city = STADTNAME_MAPPING.get(station_name, station_name)
-        weather_url = (
-            f"http://api.weatherapi.com/v1/current.json?key={api_weather}"
-            f"&q={city}&aqi=no"
+    # Wetterdaten pro Station
+    city = STADTNAME_MAPPING.get(station_name, station_name)
+    weather_url = (
+        f"http://api.weatherapi.com/v1/current.json?key={api_weather}"
+        f"&q={city}&aqi=no"
+    )
+    try:
+        r_w = requests.get(weather_url, timeout=10)
+        r_w.raise_for_status()
+        current = r_w.json().get("current", {})
+
+        temp_c   = current.get("temp_c", 0.0)
+        humidity = current.get("humidity", 0)
+        wind_kph = current.get("wind_kph", 0.0)
+        # cond_txt = current.get("condition", {}).get("text", "")
+
+        point_w = (
+            Point("weather")
+            .tag("station",       station_name)
+            .field("temperature_c", temp_c)
+            .field("humidity_pct",  humidity)
+            .field("wind_kph",      wind_kph)
+            .field("weekday",      weekday_num)
+            .time(now_utc, WritePrecision.NS)
         )
-        try:
-            r_w = requests.get(weather_url, timeout=15)
-            r_w.raise_for_status()
-            current = r_w.json().get("current", {})
+        write_api.write(bucket=influx_bucket, org=influx_org, record=point_w)
 
-            temp_c   = current.get("temp_c", 0.0)
-            humidity = current.get("humidity", 0)
-            wind_kph = current.get("wind_kph", 0.0)
-            cond_txt = current.get("condition", {}).get("text", "")
-
-            point_w = (
-                Point("weather")
-                .tag("station",       station_name)
-                .field("temperature_c", temp_c)
-                .field("humidity_pct",  humidity)
-                .field("wind_kph",      wind_kph)
-                .field("weekday",      weekday_num)
-                .time(now_utc, WritePrecision.NS)
-            )
-            write_api.write(bucket=influx_bucket, org=influx_org, record=point_w)
-
-        except Exception as e:
-            print(f"[Error] WeatherAPI für {station_name}: {e}")
+    except Exception as e:
+        print(f"[Error] WeatherAPI für {station_name}: {e}")
 
 
 # Scheduler: alle 10 Minuten (für 7 Tage)

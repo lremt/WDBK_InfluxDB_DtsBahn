@@ -1,6 +1,6 @@
 # Projekt: Bahn- und Wetterdaten-Collector mit InfluxDB
 
-Dieses Repository enthält ein vollständiges Docker-Setup, das für die Dauer einer Woche (06/02/2025 18:00 – 06/10/2025 18:00) automatisiert Fahrplandaten (Timetables + RIS :: Stations) und Wetterdaten (WeatherAPI) für zehn wichtige NRW-Bahnhöfe sammelt und in eine InfluxDB schreibt. Die Daten liegen persistent in einem Host-Verzeichnis, sodass Container oder Images gelöscht werden können, ohne die gespeicherten Zeitreihen zu verlieren. Anschließend können beliebige Clients (z. B. Jupyter Notebooks) per Flux-Query oder InfluxDB-Client auf die Daten zugreifen und Analysen durchführen. Folgend werden die dafür verwendete Ordnerstruktur und die Skripte kurz erläutert.
+Dieses Repository enthält ein vollständiges Docker-Setup, das für die Dauer einer Woche (06/08/2025 18:00 – 06/15/2025 18:00) automatisiert Fahrplandaten (Timetables + RIS :: Stations) und Wetterdaten (WeatherAPI) für zehn wichtige NRW-Bahnhöfe sammelt und in eine InfluxDB schreibt. Die Daten liegen persistent in einem Host-Verzeichnis, sodass Container oder Images gelöscht werden können, ohne die gespeicherten Zeitreihen zu verlieren. Anschließend können beliebige Clients (z. B. Jupyter Notebooks) per Flux-Query oder InfluxDB-Client auf die Daten zugreifen und Analysen durchführen. Folgend werden die dafür verwendete Ordnerstruktur und die Skripte kurz erläutert.
 
 ## Projektziel:
 
